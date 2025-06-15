@@ -2,20 +2,35 @@
 
 module Main where
 
-import ConnectDB
-import BeerShopDB
-import Types
 import Auth
-import Control.Monad.IO.Class (liftIO)
+import BeerShopDB
+import ConnectDB
 import Control.Exception (SomeException)
-import Data.Aeson (decode, object, (.=))
-import Data.Text.Lazy (Text, toStrict, fromStrict)
+import Control.Monad.IO.Class (liftIO)
+import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), decode, encode, object, withObject, (.:), (.=))
+import Data.Text qualified as T
+import Data.Text.Lazy (Text, fromStrict, toStrict)
+import Data.Text.Lazy qualified as TL
 import Database.MySQL.Simple
-import Web.Scotty hiding (status)
-import qualified Web.Scotty as S (status)
+import Network.HTTP.Types (status200)
 import Network.HTTP.Types.Status
-import qualified Data.Text as T
-import qualified Data.Text.Lazy as TL
+import Network.Wai (Middleware, mapResponseHeaders, requestMethod, responseLBS)
+import Types
+import Web.Scotty hiding (status)
+import Web.Scotty qualified as S (status)
+
+-- Helper type for order requests
+data OrderRequest = OrderRequest
+  { reqUserId :: Int,
+    reqTotal :: Double
+  }
+  deriving (Show)
+
+instance FromJSON OrderRequest where
+  parseJSON = withObject "OrderRequest" $ \o ->
+    OrderRequest
+      <$> o .: "userId"
+      <*> o .: "total"
 
 -- Helper functions
 getParamWithDefault :: Text -> Text -> ActionM Text
@@ -29,7 +44,7 @@ getAuthUser = do
   case authHeader of
     Nothing -> return Nothing
     Just headerVal -> do
-      let token = T.drop 7 $ TL.toStrict headerVal  -- Remove "Bearer " prefix
+      let token = T.drop 7 $ TL.toStrict headerVal -- Remove "Bearer " prefix
       return $ verifyToken token
 
 requireAuth :: ActionM AuthUser
@@ -56,34 +71,46 @@ parseIntParam :: Text -> ActionM (Maybe Int)
 parseIntParam paramName = do
   paramVal <- getParamWithDefault paramName ""
   let paramStr = T.unpack $ toStrict paramVal
-  return $ if null paramStr then Nothing else case reads paramStr of
-    [(x, "")] -> Just x
-    _ -> Nothing
+  return $
+    if null paramStr
+      then Nothing
+      else case reads paramStr of
+        [(x, "")] -> Just x
+        _ -> Nothing
 
 parseDoubleParam :: Text -> ActionM (Maybe Double)
 parseDoubleParam paramName = do
   paramVal <- getParamWithDefault paramName ""
   let paramStr = T.unpack $ toStrict paramVal
-  return $ if null paramStr then Nothing else case reads paramStr of
-    [(x, "")] -> Just x
-    _ -> Nothing
+  return $
+    if null paramStr
+      then Nothing
+      else case reads paramStr of
+        [(x, "")] -> Just x
+        _ -> Nothing
+
+-- CORS Middleware
+corsMiddleware :: Middleware
+corsMiddleware app req respond = do
+  let headers =
+        [ ("Access-Control-Allow-Origin", "*"),
+          ("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS"),
+          ("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        ]
+
+  if requestMethod req == "OPTIONS"
+    then respond $ responseLBS status200 headers ""
+    else app req $ \res -> respond $ mapResponseHeaders (++ headers) res
 
 main :: IO ()
 main = do
   conn <- connect connInfo
   putStrLn "Beer Shop API started on port 3000"
-  
+
   scotty 3000 $ do
-    
-    -- CORS middleware
-    middleware $ \req respond -> do
-      let headers = [("Access-Control-Allow-Origin", "*"),
-                     ("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS"),
-                     ("Access-Control-Allow-Headers", "Content-Type, Authorization")]
-      if requestMethod req == "OPTIONS"
-        then respond $ responseLBS status200 headers ""
-        else respond $ responseLBS status200 headers ""
-    
+    -- Apply CORS middleware
+    middleware corsMiddleware
+
     -- Authentication endpoints
     post "/api/auth/register" $ do
       bodyBytes <- body
@@ -127,15 +154,27 @@ main = do
       maxPriceParam <- parseDoubleParam "maxPrice"
       minAlcoholParam <- parseDoubleParam "minAlcohol"
       maxAlcoholParam <- parseDoubleParam "maxAlcohol"
-      
+
       let limit = case limitParam of Nothing -> Just 20; Just x -> Just x
           offset = case offsetParam of Nothing -> Just 0; Just x -> Just x
-          sortBy = let s = toStrict sortParam
-                   in if s `elem` ["name", "price", "price_desc", "alcohol", "alcohol_asc"] 
-                      then Just s else Nothing
-      
-      beers <- liftIO $ getBeers conn limit offset sortBy categoryParam 
-                                 minPriceParam maxPriceParam minAlcoholParam maxAlcoholParam
+          sortBy =
+            let s = toStrict sortParam
+             in if s `elem` ["name", "price", "price_desc", "alcohol", "alcohol_asc"]
+                  then Just s
+                  else Nothing
+
+      beers <-
+        liftIO $
+          getBeers
+            conn
+            limit
+            offset
+            sortBy
+            categoryParam
+            minPriceParam
+            maxPriceParam
+            minAlcoholParam
+            maxAlcoholParam
       json beers
 
     get "/api/beers/:id" $ do
@@ -349,7 +388,8 @@ main = do
         Nothing -> do
           S.status badRequest400
           json $ object ["error" .= ("Invalid JSON" :: String)]
-        Just (OrderStatusUpdate status) -> do
+        Just orderStatusUpdate -> do
+          let status = newStatus orderStatusUpdate -- Use the record field from Types.hs
           success <- liftIO $ updateOrderStatus conn orderId status
           if success
             then json $ object ["message" .= ("Order status updated" :: String)]
@@ -364,14 +404,3 @@ main = do
     notFound $ do
       S.status notFound404
       json $ object ["error" .= ("Endpoint not found" :: String)]
-
--- Helper type for order requests
-data OrderRequest = OrderRequest
-  { reqUserId :: Int
-  , reqTotal :: Double
-  } deriving Show
-
-instance FromJSON OrderRequest where
-  parseJSON = withObject "OrderRequest" $ \o -> OrderRequest
-    <$> o .: "userId"
-    <*> o .: "total"

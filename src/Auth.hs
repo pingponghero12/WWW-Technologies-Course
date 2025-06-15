@@ -2,79 +2,85 @@
 
 module Auth where
 
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as TE
+import Crypto.BCrypt qualified as BCrypt
+import Data.Aeson qualified as Aeson
+import Data.Map qualified as Map
 import Data.Text (Text)
-import Data.Time.Clock (UTCTime, getCurrentTime, addUTCTime)
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
+import Data.Time.Clock (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
-import Crypto.BCrypt
-import Web.JWT as JWT
-import qualified Data.Map as Map
 import Types
+import Web.JWT qualified as JWT
 
--- JWT secret (in production, this should be in environment variable)
 jwtSecret :: Text
 jwtSecret = "your-secret-key-change-in-production"
 
--- Token expiration time (24 hours)
 tokenExpirationTime :: NominalDiffTime
 tokenExpirationTime = 24 * 60 * 60
 
--- Hash password using bcrypt
+-- Fixed: Use BCrypt.hashPasswordUsingPolicy for salt rounds
 hashPassword :: Text -> IO (Maybe Text)
 hashPassword password = do
-  hashed <- hashPasswordUsingPolicy slowerBcryptHashingPolicy (TE.encodeUtf8 password)
-  return $ fmap TE.decodeUtf8 hashed
+  let passwordBS = TE.encodeUtf8 password
+      -- Use hashPasswordUsingPolicy with slowerBcryptHashingPolicy for 12 rounds
+      policy = BCrypt.slowerBcryptHashingPolicy
+  mhashed <- BCrypt.hashPasswordUsingPolicy policy passwordBS
+  return $ fmap TE.decodeUtf8 mhashed
 
--- Verify password against hash
 verifyPassword :: Text -> Text -> Bool
-verifyPassword password hash = 
-  validatePassword (TE.encodeUtf8 hash) (TE.encodeUtf8 password)
+verifyPassword password hash =
+  BCrypt.validatePassword (TE.encodeUtf8 password) (TE.encodeUtf8 hash)
 
--- Generate JWT token
 generateToken :: User -> IO Text
 generateToken user = do
   now <- getCurrentTime
   let expTime = addUTCTime tokenExpirationTime now
-      claims = def { 
-        sub = stringOrURI $ T.pack $ show (userId user),
-        JWT.exp = numericDate $ utcTimeToPOSIXSeconds expTime,
-        iat = numericDate $ utcTimeToPOSIXSeconds now,
-        unregisteredClaims = Map.fromList [
-          ("role", String $ role user),
-          ("username", String $ username user)
-        ]
-      }
-      token = encodeSigned HS256 (secret jwtSecret) claims
+      cs =
+        mempty
+          { JWT.sub = JWT.stringOrURI $ T.pack (show (userId user)),
+            JWT.exp = JWT.numericDate $ utcTimeToPOSIXSeconds expTime,
+            JWT.iat = JWT.numericDate $ utcTimeToPOSIXSeconds now,
+            JWT.unregisteredClaims =
+              JWT.ClaimsMap $
+                Map.fromList
+                  [ ("role", Aeson.String $ role user),
+                    ("username", Aeson.String $ username user)
+                  ]
+          }
+      signer = JWT.hmacSecret jwtSecret
+      token = JWT.encodeSigned signer mempty cs
   return token
 
--- Verify JWT token and extract user info
 verifyToken :: Text -> Maybe AuthUser
 verifyToken token = do
-  jwt <- decode token
-  verified <- verify (secret jwtSecret) jwt
-  if verified
-    then do
-      let claims = claims verified
-      userIdStr <- stringOrURIToText <$> sub claims
-      userId' <- readMaybe $ T.unpack userIdStr
-      role' <- Map.lookup "role" (unregisteredClaims claims) >>= 
-               (\case String r -> Just r; _ -> Nothing)
-      username' <- Map.lookup "username" (unregisteredClaims claims) >>= 
-                   (\case String u -> Just u; _ -> Nothing)
-      return $ AuthUser userId' username' role'
-    else Nothing
-  where
-    readMaybe s = case reads s of
-      [(x, "")] -> Just x
-      _ -> Nothing
-    stringOrURIToText uri = T.pack $ show uri
+  jwt <- JWT.decode token
+  let signer = JWT.hmacSecret jwtSecret
+      verifier = JWT.toVerify signer
+  verifiedJWT <- JWT.verify verifier jwt
+  let cs = JWT.claims verifiedJWT
+      subField = JWT.sub cs
+      userIdStr = case subField of
+        Just uri -> JWT.stringOrURIToText uri
+        Nothing -> ""
+  userId' <- readMaybeInt (T.unpack userIdStr)
+  let claimsMap = JWT.unClaimsMap $ JWT.unregisteredClaims cs
+  role' <- case Map.lookup "role" claimsMap of
+    Just (Aeson.String r) -> Just r
+    _ -> Nothing
+  username' <- case Map.lookup "username" claimsMap of
+    Just (Aeson.String u) -> Just u
+    _ -> Nothing
+  return $ AuthUser userId' username' role'
 
--- Check if user has admin role
+readMaybeInt :: String -> Maybe Int
+readMaybeInt s = case reads s of
+  [(x, "")] -> Just x
+  _ -> Nothing
+
 isAdmin :: AuthUser -> Bool
 isAdmin user = authRole user == "admin"
 
--- Check if user can access resource (admin or owner)
 canAccessUserResource :: AuthUser -> Int -> Bool
-canAccessUserResource authUser targetUserId = 
+canAccessUserResource authUser targetUserId =
   isAdmin authUser || authUserId authUser == targetUserId
