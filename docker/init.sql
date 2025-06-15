@@ -50,21 +50,49 @@ CREATE TABLE order_items (
     FOREIGN KEY (beer_id) REFERENCES beers(id)
 );
 
+-- Insert categories
 INSERT INTO categories (name, description) VALUES 
-('Pilsner', 'Light, crisp lager beer'),
-('Wheat Beer', 'Beer brewed with wheat'),
-('IPA', 'India Pale Ale with hoppy flavor'),
-('Porter', 'Dark beer with rich flavor');
+('Pilsner', 'Light, crisp lager beer with golden color'),
+('Wheat Beer', 'Beer brewed with wheat, often cloudy and smooth'),
+('IPA', 'India Pale Ale with hoppy flavor and citrus notes'),
+('Porter', 'Dark beer with rich, roasted flavor'),
+('Stout', 'Very dark beer with coffee and chocolate notes'),
+('Lager', 'Bottom-fermented beer, crisp and clean');
 
+-- Insert beers with more variety
 INSERT INTO beers (name, brewery, category_id, alcohol_percentage, price, stock_quantity, description) VALUES 
-('Żywiec', 'Żywiec Brewery', 1, 5.6, 3.50, 100, 'Classic Polish pilsner'),
-('Tyskie', 'Tyskie Brewery', 1, 5.2, 3.20, 150, 'Popular Polish lager'),
-('Warka Strong', 'Warka Brewery', 1, 7.0, 4.00, 80, 'Strong Polish beer'),
-('Paulaner Hefe-Weizen', 'Paulaner', 2, 5.5, 5.50, 60, 'German wheat beer'),
-('Żubr', 'Żubr Brewery', 1, 6.0, 3.80, 120, 'Strong Polish pilsner');
+('Żywiec', 'Żywiec Brewery', 1, 5.6, 3.50, 100, 'Classic Polish pilsner with crisp taste'),
+('Tyskie', 'Tyskie Brewery', 1, 5.2, 3.20, 150, 'Popular Polish lager with balanced flavor'),
+('Warka Strong', 'Warka Brewery', 6, 7.0, 4.00, 80, 'Strong Polish lager with full body'),
+('Paulaner Hefe-Weizen', 'Paulaner', 2, 5.5, 5.50, 60, 'German wheat beer with banana and clove notes'),
+('Żubr', 'Żubr Brewery', 1, 6.0, 3.80, 120, 'Strong Polish pilsner with distinctive taste'),
+('Guinness', 'Guinness Brewery', 5, 4.2, 6.50, 40, 'Irish dry stout with creamy head'),
+('Sierra Nevada IPA', 'Sierra Nevada', 3, 6.2, 7.20, 35, 'American IPA with citrus and pine notes'),
+('Okocim Porter', 'Okocim Brewery', 4, 9.0, 4.80, 25, 'Polish porter with rich, dark flavor'),
+('Perła Chmielowa', 'Perła Brewery', 3, 6.1, 4.20, 90, 'Polish IPA with hoppy character'),
+('Książęce Pszeniczne', 'Książęce Brewery', 2, 5.0, 4.50, 70, 'Polish wheat beer, unfiltered');
 
+-- Insert users with bcrypt hashed passwords
+-- Password for admin: admin123 (bcrypt hash)
+-- Password for customer1: password123 (bcrypt hash)
+-- Password for customer2: test123 (bcrypt hash)
 INSERT INTO users (username, email, password_hash, role) VALUES 
-('admin', 'admin@beershop.com', 'admin123', 'admin'),
-('customer1', 'customer@beershop.com', 'password123', 'customer');
+('admin', 'admin@beershop.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewHw7LGJ1QE/l/5W', 'admin'),
+('customer1', 'customer1@beershop.com', '$2b$12$6vq/RjPtDFQC/YQq6fTu6eN9b8YhFoP1v8vLrr9f9M8nL8W7GxK8e', 'customer'),
+('customer2', 'customer2@beershop.com', '$2b$12$8Gg/TyWwrR8pLs5yqG2lfe7qDh9KpMj3L5yD8Nv3Rj8Q1A2sC3dE', 'customer');
+
+-- Insert sample orders
+INSERT INTO orders (user_id, total_amount, status) VALUES 
+(2, 10.70, 'delivered'),
+(2, 15.60, 'pending'),
+(3, 7.20, 'shipped');
+
+-- Insert order items
+INSERT INTO order_items (order_id, beer_id, quantity, unit_price) VALUES 
+(1, 1, 2, 3.50),
+(1, 2, 1, 3.20),
+(2, 4, 2, 5.50),
+(2, 5, 1, 3.80),
+(3, 7, 1, 7.20);
 
 EXIT;

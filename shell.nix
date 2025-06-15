@@ -9,11 +9,13 @@ pkgs.mkShell {
             bytestring
             text
             http-types
+            jwt
         ]))
         pkgs.haskellPackages.cabal-install
         pkgs.mariadb
         pkgs.docker
         pkgs.docker-compose
         pkgs.curl
+        pkgs.haskell-language-server
     ];
 }
