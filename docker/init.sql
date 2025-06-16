@@ -72,14 +72,12 @@ INSERT INTO beers (name, brewery, category_id, alcohol_percentage, price, stock_
 ('Perła Chmielowa', 'Perła Brewery', 3, 6.1, 4.20, 90, 'Polish IPA with hoppy character'),
 ('Książęce Pszeniczne', 'Książęce Brewery', 2, 5.0, 4.50, 70, 'Polish wheat beer, unfiltered');
 
--- Insert users with bcrypt hashed passwords
--- Password for admin: admin123 (bcrypt hash)
--- Password for customer1: password123 (bcrypt hash)
--- Password for customer2: test123 (bcrypt hash)
+-- Insert users with plain text passwords (will be hashed by the application)
+-- For testing: admin123, password123, test123
 INSERT INTO users (username, email, password_hash, role) VALUES 
-('admin', 'admin@beershop.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewHw7LGJ1QE/l/5W', 'admin'),
-('customer1', 'customer1@beershop.com', '$2b$12$6vq/RjPtDFQC/YQq6fTu6eN9b8YhFoP1v8vLrr9f9M8nL8W7GxK8e', 'customer'),
-('customer2', 'customer2@beershop.com', '$2b$12$8Gg/TyWwrR8pLs5yqG2lfe7qDh9KpMj3L5yD8Nv3Rj8Q1A2sC3dE', 'customer');
+('admin', 'admin@beershop.com', 'admin123', 'admin'),
+('customer1', 'customer1@beershop.com', 'password123', 'customer'),
+('customer2', 'customer2@beershop.com', 'test123', 'customer');
 
 -- Insert sample orders
 INSERT INTO orders (user_id, total_amount, status) VALUES 
@@ -94,5 +92,3 @@ INSERT INTO order_items (order_id, beer_id, quantity, unit_price) VALUES
 (2, 4, 2, 5.50),
 (2, 5, 1, 3.80),
 (3, 7, 1, 7.20);
-
-EXIT;
